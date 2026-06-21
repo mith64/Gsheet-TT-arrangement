@@ -146,7 +146,18 @@ def save_to_gsheets(df, worksheet_name):
     except Exception as e:
         st.error(f"Error saving to Google Sheets: {e}")
         return False
-
+# Add this function to your code
+def get_gsheets_connection_from_secrets():
+    """Connect to Google Sheets using Streamlit secrets"""
+    try:
+        service_account_info = dict(st.secrets["connections"]["gsheets"])
+        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(service_account_info, scope)
+        client = gspread.authorize(creds)
+        return client.open(SHEET_NAME)
+    except Exception as e:
+        st.error(f"Failed to connect: {e}")
+        return None
 # ============================================
 # DATA STORAGE FUNCTIONS (Google Sheets + Local)
 # ============================================
