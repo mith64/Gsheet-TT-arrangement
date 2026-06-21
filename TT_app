@@ -158,6 +158,33 @@ def get_gsheets_connection_from_secrets():
     except Exception as e:
         st.error(f"Failed to connect: {e}")
         return None
+import streamlit as st
+import os
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+# Detect deployment environment
+IS_STREAMLIT_CLOUD = os.environ.get('IS_STREAMLIT_CLOUD', False)
+
+def get_gsheets_connection():
+    """Connect to Google Sheets - works both locally and on Streamlit Cloud"""
+    try:
+        if IS_STREAMLIT_CLOUD or 'connections' in st.secrets:
+            # Use secrets from Streamlit Cloud
+            service_account_info = dict(st.secrets["connections"]["gsheets"])
+            scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(service_account_info, scope)
+            client = gspread.authorize(creds)
+        else:
+            # Local development - use credentials.json file
+            scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+            creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
+            client = gspread.authorize(creds)
+        
+        return client.open(SHEET_NAME)
+    except Exception as e:
+        st.error(f"Failed to connect to Google Sheets: {e}")
+        return None
 # ============================================
 # DATA STORAGE FUNCTIONS (Google Sheets + Local)
 # ============================================
