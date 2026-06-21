@@ -1,0 +1,3 @@
+# Create the directory and file
+mkdir backups
+touch backups/.gitkeep
