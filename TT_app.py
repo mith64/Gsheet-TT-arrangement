@@ -10,6 +10,52 @@ import time
 import gc
 from collections import defaultdict, Counter
 import numpy as np
+import sys
+import subprocess
+import importlib
+import os
+
+# Function to ensure packages are installed
+def install_and_import(package):
+    try:
+        importlib.import_module(package)
+        return True
+    except ImportError:
+        print(f"📦 Installing {package}...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+            return True
+        except:
+            print(f"❌ Failed to install {package}")
+            return False
+
+# Install required packages
+required_packages = ['openpyxl', 'xlsxwriter']
+for pkg in required_packages:
+    install_and_import(pkg)
+
+# Now try to import
+try:
+    import openpyxl
+    OPENPYXL_AVAILABLE = True
+    print(f"✅ openpyxl {openpyxl.__version__} loaded successfully!")
+except ImportError:
+    OPENPYXL_AVAILABLE = False
+    print("❌ openpyxl not available. Using fallback mode.")
+
+# Import other packages
+import pandas as pd
+import hashlib
+import json
+import shutil
+import tempfile
+from datetime import datetime
+import time
+import gc
+from collections import defaultdict, Counter
+import numpy as np
+
+# Rest of your code...
 
 # Try to import openpyxl with error handling
 try:
