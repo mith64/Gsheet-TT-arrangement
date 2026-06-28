@@ -8,7 +8,6 @@ import tempfile
 from datetime import datetime
 import time
 import gc
-from collections import defaultdict, Counter
 import numpy as np
 
 # Try importing optional packages
@@ -66,7 +65,8 @@ create_directories()
 
 # Hash password function
 def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+    """Hash password using SHA256"""
+    return hashlib.sha256(str(password).encode()).hexdigest()
 
 # Load users from JSON file
 def load_users():
@@ -122,37 +122,59 @@ def save_users(users):
 # Auto-create users from teachers in timetable
 def auto_create_teacher_users():
     """Automatically create user accounts for teachers from timetable"""
-    df = load_timetable()
-    users = load_users()
-    
-    if df is not None and not df.empty:
-        teachers = df['Teacher'].unique()
-        created_count = 0
+    try:
+        df = load_timetable()
+        users = load_users()
         
-        for teacher in teachers:
-            teacher_data = df[df['Teacher'] == teacher].iloc[0] if len(df[df['Teacher'] == teacher]) > 0 else None
-            designation = teacher_data['Designation'] if teacher_data is not None else "Teacher"
+        if df is not None and not df.empty:
+            # Clean teacher names - convert to string and handle NaN
+            if 'Teacher' in df.columns:
+                df['Teacher'] = df['Teacher'].fillna('').astype(str).str.strip()
             
-            username = teacher.lower().replace(" ", "_").replace(".", "").replace("dr_", "dr").replace("prof_", "prof")
+            teachers = df['Teacher'].unique()
+            created_count = 0
             
-            if username not in users and teacher != "New Teacher":
-                default_password = teacher.lower().replace(" ", "_")
-                users[username] = {
-                    "password": hash_password(default_password),
-                    "name": teacher,
-                    "designation": designation,
-                    "role": "user",
-                    "first_login": True,
-                    "password_last_changed": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "teacher_name": teacher,
-                    "school_id": default_password
-                }
-                created_count += 1
-        
-        if created_count > 0:
-            save_users(users)
-            return created_count
-    return 0
+            for teacher in teachers:
+                # Skip empty/invalid teacher names
+                if not teacher or teacher == '' or teacher == 'nan' or teacher == 'None' or teacher == 'New Teacher':
+                    continue
+                
+                # Convert teacher to string (safety check)
+                teacher = str(teacher).strip()
+                
+                # Get teacher's designation from timetable
+                teacher_data = df[df['Teacher'] == teacher]
+                if len(teacher_data) > 0:
+                    designation = str(teacher_data.iloc[0].get('Designation', 'Teacher'))
+                else:
+                    designation = "Teacher"
+                
+                # Create username from teacher name (lowercase, no spaces)
+                username = teacher.lower().replace(" ", "_").replace(".", "").replace("dr_", "dr").replace("prof_", "prof")
+                
+                # Only create if user doesn't exist
+                if username not in users:
+                    # Use teacher name as default password
+                    default_password = teacher.lower().replace(" ", "_")
+                    users[username] = {
+                        "password": hash_password(default_password),
+                        "name": teacher,
+                        "designation": designation,
+                        "role": "user",
+                        "first_login": True,
+                        "password_last_changed": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "teacher_name": teacher,
+                        "school_id": default_password
+                    }
+                    created_count += 1
+            
+            if created_count > 0:
+                save_users(users)
+                return created_count
+        return 0
+    except Exception as e:
+        st.error(f"Error auto-creating users: {e}")
+        return 0
 
 # Load classrooms
 def load_classrooms():
@@ -222,46 +244,9 @@ def save_arrangements(arrangements):
         st.error(f"Error saving arrangements: {e}")
         return False
 
-# Load timetable
-@st.cache_data(ttl=300)
-def load_timetable():
-    """Load timetable with multiple fallback methods"""
-    
-    if not OPENPYXL_AVAILABLE:
-        st.error("openpyxl package is not installed!")
-        return create_sample_timetable()
-    
-    try:
-        if not os.path.exists(TIMETABLE_FILE):
-            st.warning("No timetable file found. Creating sample data...")
-            return create_sample_timetable()
-        
-        try:
-            df = pd.read_excel(TIMETABLE_FILE, engine='openpyxl')
-            if not df.empty:
-                st.session_state.timetable_df = df
-                return df
-        except Exception as e:
-            st.warning(f"Could not read with openpyxl: {e}")
-            
-        try:
-            df = pd.read_excel(TIMETABLE_FILE)
-            if not df.empty:
-                st.session_state.timetable_df = df
-                return df
-        except Exception as e:
-            st.warning(f"Could not read with default engine: {e}")
-            
-        return create_sample_timetable()
-            
-    except Exception as e:
-        st.error(f"Error loading timetable: {e}")
-        if st.session_state.timetable_df is not None:
-            return st.session_state.timetable_df
-        return create_sample_timetable()
-
+# Create sample timetable
 def create_sample_timetable():
-    """Create sample timetable data"""
+    """Create sample timetable data with proper types"""
     sample_data = {
         'Day': ['Monday', 'Monday', 'Monday', 'Monday', 'Monday', 'Monday', 'Monday', 'Monday',
                 'Tuesday', 'Tuesday', 'Tuesday', 'Tuesday', 'Tuesday', 'Tuesday', 'Tuesday', 'Tuesday'],
@@ -274,54 +259,87 @@ def create_sample_timetable():
         'Room': ['101', '102', '101', '103', '104', '102', '101', '103'] * 2
     }
     df = pd.DataFrame(sample_data)
-    save_timetable(df)
+    
+    # Convert ALL columns to string
+    for col in df.columns:
+        df[col] = df[col].astype(str)
+    
     return df
 
+# Load timetable
+@st.cache_data(ttl=300)
+def load_timetable():
+    """Load timetable with data cleaning"""
+    
+    if not OPENPYXL_AVAILABLE:
+        st.error("openpyxl package is not installed!")
+        return create_sample_timetable()
+    
+    try:
+        if not os.path.exists(TIMETABLE_FILE):
+            st.warning("No timetable file found. Creating sample data...")
+            sample_df = create_sample_timetable()
+            save_timetable(sample_df)
+            return sample_df
+        
+        # Read the file
+        df = pd.read_excel(TIMETABLE_FILE, engine='openpyxl')
+        
+        # Clean ALL columns - convert to string
+        for col in df.columns:
+            df[col] = df[col].fillna('').astype(str).str.strip()
+        
+        # Remove rows with empty Teacher
+        df = df[df['Teacher'] != '']
+        df = df[df['Teacher'] != 'nan']
+        df = df[df['Teacher'] != 'None']
+        df = df[df['Teacher'] != 'New Teacher']
+        
+        if not df.empty:
+            st.session_state.timetable_df = df
+            return df
+        else:
+            sample_df = create_sample_timetable()
+            save_timetable(sample_df)
+            return sample_df
+            
+    except Exception as e:
+        st.error(f"Error loading timetable: {e}")
+        sample_df = create_sample_timetable()
+        save_timetable(sample_df)
+        return sample_df
+
 def save_timetable(df):
-    """Save timetable with simplified approach"""
+    """Save timetable with data cleaning"""
     
     if not OPENPYXL_AVAILABLE:
         st.error("Cannot save: openpyxl not installed")
         return False
     
     try:
+        # Clean data - convert ALL columns to string first
+        for col in df.columns:
+            df[col] = df[col].fillna('').astype(str).str.strip()
+        
+        # Remove empty/invalid rows
+        df = df[df['Teacher'] != '']
+        df = df[df['Teacher'] != 'nan']
+        df = df[df['Teacher'] != 'None']
+        
         gc.collect()
         time.sleep(0.5)
         
-        try:
-            df.to_excel(TIMETABLE_FILE, index=False, engine='openpyxl')
-            st.session_state.timetable_df = df
-            st.cache_data.clear()
-            auto_create_teacher_users()
-            return True
-        except Exception as e1:
-            st.warning(f"Direct save failed: {e1}")
-            
-            try:
-                temp_file = tempfile.NamedTemporaryFile(
-                    delete=False, 
-                    suffix='.xlsx',
-                    mode='wb'
-                )
-                temp_file.close()
-                
-                df.to_excel(temp_file.name, index=False, engine='openpyxl')
-                
-                if os.path.exists(TIMETABLE_FILE):
-                    os.remove(TIMETABLE_FILE)
-                shutil.copy2(temp_file.name, TIMETABLE_FILE)
-                os.unlink(temp_file.name)
-                
-                st.session_state.timetable_df = df
-                st.cache_data.clear()
-                auto_create_teacher_users()
-                return True
-            except Exception as e3:
-                st.error(f"All save methods failed. Last error: {e3}")
-                return False
+        # Save to Excel
+        df.to_excel(TIMETABLE_FILE, index=False, engine='openpyxl')
+        st.session_state.timetable_df = df
+        st.cache_data.clear()
+        
+        # Auto-create users
+        auto_create_teacher_users()
+        return True
                     
     except Exception as e:
-        st.error(f"Unexpected error saving: {e}")
+        st.error(f"Error saving timetable: {e}")
         return False
 
 # ============ DETECT COLLISIONS ============
@@ -333,44 +351,26 @@ def detect_collisions(df):
     if df is None or df.empty:
         return collisions
     
-    grouped = df.groupby(['Day', 'Time', 'Teacher']).size().reset_index(name='count')
-    collisions_df = grouped[grouped['count'] > 1]
-    
-    if not collisions_df.empty:
-        for _, row in collisions_df.iterrows():
-            classes = df[(df['Day'] == row['Day']) & 
-                        (df['Time'] == row['Time']) & 
-                        (df['Teacher'] == row['Teacher'])]['Class'].tolist()
-            collisions.append({
-                'day': row['Day'],
-                'time': row['Time'],
-                'teacher': row['Teacher'],
-                'classes': classes,
-                'count': row['count']
-            })
+    try:
+        grouped = df.groupby(['Day', 'Time', 'Teacher']).size().reset_index(name='count')
+        collisions_df = grouped[grouped['count'] > 1]
+        
+        if not collisions_df.empty:
+            for _, row in collisions_df.iterrows():
+                classes = df[(df['Day'] == row['Day']) & 
+                            (df['Time'] == row['Time']) & 
+                            (df['Teacher'] == row['Teacher'])]['Class'].tolist()
+                collisions.append({
+                    'day': row['Day'],
+                    'time': row['Time'],
+                    'teacher': row['Teacher'],
+                    'classes': classes,
+                    'count': row['count']
+                })
+    except Exception as e:
+        st.error(f"Error detecting collisions: {e}")
     
     return collisions
-
-def highlight_collisions(df):
-    """Create a styled dataframe with collision highlights"""
-    if df is None or df.empty:
-        return df
-    
-    collisions = detect_collisions(df)
-    
-    if not collisions:
-        return df
-    
-    styled_df = df.copy()
-    styled_df['_collision'] = False
-    
-    for collision in collisions:
-        mask = (styled_df['Day'] == collision['day']) & \
-               (styled_df['Time'] == collision['time']) & \
-               (styled_df['Teacher'] == collision['teacher'])
-        styled_df.loc[mask, '_collision'] = True
-    
-    return styled_df
 
 # ============ ARRANGEMENT SUMMARY TABLE ============
 
@@ -393,8 +393,7 @@ def display_arrangement_summary():
         st.info(f"No active arrangements for {selected_day}")
         return
     
-    day_times = df[df['Day'] == selected_day]['Time'].unique()
-    day_times = sorted(day_times)
+    day_times = sorted(df[df['Day'] == selected_day]['Time'].unique())
     
     period_labels = []
     for i in range(len(day_times)):
@@ -409,10 +408,10 @@ def display_arrangement_summary():
     
     absent_teachers_data = {}
     for key, value in day_arrangements.items():
-        absent = value.get('absent_teacher')
-        time_slot = value.get('time')
-        replacement = value.get('replacement_teacher')
-        class_name = value.get('class')
+        absent = str(value.get('absent_teacher', ''))
+        time_slot = str(value.get('time', ''))
+        replacement = str(value.get('replacement_teacher', ''))
+        class_name = str(value.get('class', ''))
         
         if absent not in absent_teachers_data:
             absent_teachers_data[absent] = {}
@@ -450,17 +449,20 @@ def display_arrangement_summary():
 
 def get_teacher_availability(df, day, time_slot, exclude_teacher=None):
     """Get available teachers for a given time slot"""
-    busy_teachers = df[(df['Day'] == day) & (df['Time'] == time_slot)]['Teacher'].tolist()
-    all_teachers = df['Teacher'].unique()
-    
-    available = []
-    for teacher in all_teachers:
-        if teacher not in busy_teachers and teacher != exclude_teacher:
-            teacher_duties = df[(df['Day'] == day) & (df['Time'] == time_slot) & (df['Teacher'] == teacher)]
-            if teacher_duties.empty:
-                available.append(teacher)
-    
-    return available
+    try:
+        busy_teachers = df[(df['Day'] == day) & (df['Time'] == time_slot)]['Teacher'].tolist()
+        all_teachers = df['Teacher'].unique()
+        
+        available = []
+        for teacher in all_teachers:
+            if teacher not in busy_teachers and teacher != exclude_teacher:
+                teacher_duties = df[(df['Day'] == day) & (df['Time'] == time_slot) & (df['Teacher'] == teacher)]
+                if teacher_duties.empty:
+                    available.append(teacher)
+        
+        return available
+    except:
+        return []
 
 def calculate_teacher_load(df, teacher):
     """Calculate weekly load for a teacher"""
@@ -468,70 +470,80 @@ def calculate_teacher_load(df, teacher):
 
 def get_teacher_vacant_periods(df, teacher, day):
     """Get all vacant periods for a teacher on a specific day"""
-    teacher_schedule = df[(df['Teacher'] == teacher) & (df['Day'] == day)]
-    teacher_times = set(teacher_schedule['Time'].tolist())
-    all_times = set(df[df['Day'] == day]['Time'].unique())
-    
-    vacant_periods = all_times - teacher_times
-    return list(vacant_periods)
+    try:
+        teacher_schedule = df[(df['Teacher'] == teacher) & (df['Day'] == day)]
+        teacher_times = set(teacher_schedule['Time'].tolist())
+        all_times = set(df[df['Day'] == day]['Time'].unique())
+        return list(all_times - teacher_times)
+    except:
+        return []
 
 def get_teacher_periods(df, teacher, day):
     """Get all periods for a teacher on a specific day"""
-    teacher_schedule = df[(df['Teacher'] == teacher) & (df['Day'] == day)]
-    return sorted(teacher_schedule['Time'].tolist())
+    try:
+        teacher_schedule = df[(df['Teacher'] == teacher) & (df['Day'] == day)]
+        return sorted(teacher_schedule['Time'].tolist())
+    except:
+        return []
 
 def predict_best_replacement(df, absent_teacher, day, time_slot, class_name, subject):
     """PREDICTION ALGORITHM: Find best replacement teacher based on multiple criteria"""
-    
-    subject_teachers = df[df['Subject'] == subject]['Teacher'].unique()
-    busy_teachers = df[(df['Day'] == day) & (df['Time'] == time_slot)]['Teacher'].tolist()
-    on_duty = df[(df['Day'] == day) & (df['Time'] == time_slot) & (df['Designation'].str.contains('Duty', case=False, na=False))]['Teacher'].tolist()
-    
-    candidates = []
-    
-    for teacher in subject_teachers:
-        if teacher == absent_teacher:
-            continue
-        if teacher in busy_teachers:
-            continue
-        if teacher in on_duty:
-            continue
+    try:
+        subject_teachers = df[df['Subject'] == subject]['Teacher'].unique()
+        busy_teachers = df[(df['Day'] == day) & (df['Time'] == time_slot)]['Teacher'].tolist()
+        on_duty = df[(df['Day'] == day) & (df['Time'] == time_slot) & (df['Designation'].str.contains('Duty', case=False, na=False))]['Teacher'].tolist()
         
-        score = 0
-        load = calculate_teacher_load(df, teacher)
-        score += (100 - load)
+        candidates = []
         
-        vacant_periods = get_teacher_vacant_periods(df, teacher, day)
-        if len(vacant_periods) >= 2:
-            score += 30
+        for teacher in subject_teachers:
+            if teacher == absent_teacher:
+                continue
+            if teacher in busy_teachers:
+                continue
+            if teacher in on_duty:
+                continue
+            
+            score = 0
+            load = calculate_teacher_load(df, teacher)
+            score += (100 - load)
+            
+            vacant_periods = get_teacher_vacant_periods(df, teacher, day)
+            if len(vacant_periods) >= 2:
+                score += 30
+            
+            if len(df[(df['Teacher'] == teacher) & (df['Class'] == class_name)]) > 0:
+                score += 20
+            
+            candidates.append((teacher, score))
         
-        if len(df[(df['Teacher'] == teacher) & (df['Class'] == class_name)]) > 0:
-            score += 20
+        candidates.sort(key=lambda x: x[1], reverse=True)
         
-        candidates.append((teacher, score))
-    
-    candidates.sort(key=lambda x: x[1], reverse=True)
-    
-    if candidates:
-        return candidates[0][0]
-    else:
+        if candidates:
+            return candidates[0][0]
+        else:
+            all_available = get_teacher_availability(df, day, time_slot, absent_teacher)
+            return all_available[0] if all_available else None
+    except:
         all_available = get_teacher_availability(df, day, time_slot, absent_teacher)
         return all_available[0] if all_available else None
 
 def check_crisis_mode(df, arrangements):
     """Check if absent teacher count exceeds 40%"""
-    total_teachers = len(df['Teacher'].unique())
-    
-    recent_absences = set()
-    for key, value in arrangements.items():
-        if 'status' in value and value['status'] == 'pending':
-            recent_absences.add(value.get('absent_teacher'))
-    
-    absent_count = len(recent_absences)
-    
-    if total_teachers > 0 and (absent_count / total_teachers) >= 0.4:
-        return True, absent_count, total_teachers
-    return False, absent_count, total_teachers
+    try:
+        total_teachers = len(df['Teacher'].unique())
+        
+        recent_absences = set()
+        for key, value in arrangements.items():
+            if 'status' in value and value['status'] == 'pending':
+                recent_absences.add(value.get('absent_teacher'))
+        
+        absent_count = len(recent_absences)
+        
+        if total_teachers > 0 and (absent_count / total_teachers) >= 0.4:
+            return True, absent_count, total_teachers
+        return False, absent_count, total_teachers
+    except:
+        return False, 0, 0
 
 # ============ ONLINE TIMETABLE EDITOR ============
 
@@ -683,7 +695,7 @@ def edit_timetable_online():
             collisions = detect_collisions(df)
             st.metric("Collisions", len(collisions), delta="⚠️" if collisions else "✅")
 
-# ============ CLASSROOM MANAGEMENT UI ============
+# ============ CLASSROOM MANAGEMENT ============
 
 def classroom_management():
     """Complete classroom management interface"""
@@ -693,6 +705,7 @@ def classroom_management():
     
     tab1, tab2, tab3 = st.tabs(["📋 View Classrooms", "➕ Add/Edit Classroom", "🗑️ Delete Classroom"])
     
+    # Tab 1: View Classrooms
     with tab1:
         if classrooms:
             for room_id, room_data in classrooms.items():
@@ -715,6 +728,7 @@ def classroom_management():
         else:
             st.info("No classrooms added yet. Use 'Add Classroom' tab to add.")
     
+    # Tab 2: Add/Edit Classroom
     with tab2:
         st.subheader("Add/Edit Classroom")
         
@@ -759,6 +773,7 @@ def classroom_management():
                 else:
                     st.error("Please enter classroom name")
     
+    # Tab 3: Delete Classroom
     with tab3:
         if classrooms:
             st.subheader("Delete Classroom")
@@ -774,7 +789,7 @@ def classroom_management():
         else:
             st.info("No classrooms to delete")
 
-# ============ IMPROVED ARRANGEMENT SYSTEM ============
+# ============ ARRANGEMENT SYSTEM ============
 
 def arrangement_management():
     """Enhanced arrangement management with full day and half day options"""
@@ -788,41 +803,7 @@ def arrangement_management():
     arrangements = load_arrangements()
     if arrangements is None:
         arrangements = {}
-    with tab3:
-        st.subheader("Upload Timetable (Excel)")
-    uploaded_file = st.file_uploader("Choose Excel file", type=['xlsx', 'xls'])
     
-    if uploaded_file:
-        try:
-            df = pd.read_excel(uploaded_file)
-            
-            # Clean data immediately after upload
-            required_cols = ['Day', 'Time', 'Teacher', 'Subject', 'Class', 'Designation']
-            
-            # Check required columns
-            if not all(col in df.columns for col in required_cols):
-                st.error(f"Missing columns. Required: {required_cols}")
-                st.write("Your columns:", df.columns.tolist())
-            else:
-                # Convert all columns to string and clean
-                for col in df.columns:
-                    df[col] = df[col].fillna('').astype(str).str.strip()
-                
-                # Add Room column if missing
-                if 'Room' not in df.columns:
-                    df['Room'] = ''
-                
-                # Remove empty rows
-                df = df[df['Teacher'] != '']
-                df = df[df['Teacher'] != 'nan']
-                
-                if save_timetable(df):
-                    st.success("Timetable uploaded successfully!")
-                    st.rerun()
-                else:
-                    st.error("Failed to save timetable")
-        except Exception as e:
-            st.error(f"Error reading file: {e}")
     display_arrangement_summary()
     
     st.markdown("---")
@@ -1049,6 +1030,7 @@ def password_change_form():
         st.rerun()
 
 def login(username, password, school_id):
+    """Login function"""
     users = load_users()
     if username in users:
         if users[username]['password'] == hash_password(school_id) or users[username]['password'] == hash_password(password):
@@ -1068,6 +1050,7 @@ def login(username, password, school_id):
     return False
 
 def logout():
+    """Logout function"""
     st.session_state.logged_in = False
     st.session_state.username = None
     st.session_state.role = None
@@ -1080,6 +1063,7 @@ def logout():
     st.rerun()
 
 def admin_panel():
+    """Admin panel with all management options"""
     st.header("👑 Admin Panel")
     
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
@@ -1168,17 +1152,31 @@ def admin_panel():
         if uploaded_file:
             try:
                 df = pd.read_excel(uploaded_file)
+                
+                # Clean data immediately
+                for col in df.columns:
+                    df[col] = df[col].fillna('').astype(str).str.strip()
+                
                 required_cols = ['Day', 'Time', 'Teacher', 'Subject', 'Class', 'Designation']
-                if all(col in df.columns for col in required_cols):
+                
+                if not all(col in df.columns for col in required_cols):
+                    st.error(f"Missing columns. Required: {required_cols}")
+                    st.write("Your columns:", df.columns.tolist())
+                else:
                     if 'Room' not in df.columns:
                         df['Room'] = ''
+                    
+                    # Remove empty rows
+                    df = df[df['Teacher'] != '']
+                    df = df[df['Teacher'] != 'nan']
+                    
                     if save_timetable(df):
                         st.success("Timetable uploaded successfully! Teacher accounts created automatically.")
                         st.rerun()
-                else:
-                    st.error(f"Missing columns. Required: {required_cols}")
+                    else:
+                        st.error("Failed to save timetable")
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Error reading file: {e}")
     
     with tab4:
         edit_timetable_online()
@@ -1190,6 +1188,7 @@ def admin_panel():
         arrangement_management()
 
 def user_dashboard():
+    """User dashboard showing timetable and arrangements"""
     st.header(f"👋 Welcome, {st.session_state.name}!")
     st.write(f"**Designation:** {st.session_state.designation}")
     st.write(f"**School ID:** {st.session_state.school_id}")
@@ -1274,8 +1273,9 @@ def user_dashboard():
         st.info("No arrangements found")
 
 def main():
+    """Main application"""
     st.set_page_config(
-        page_title="Timetable Management System with AI Prediction",
+        page_title="Timetable Management System",
         page_icon="📚",
         layout="wide"
     )
@@ -1302,26 +1302,23 @@ def main():
         max-width: 400px;
         margin: 0 auto;
     }
-    .collision-warning {
-        background-color: #ffcccc;
-        padding: 10px;
-        border-radius: 5px;
-        border-left: 5px solid #ff0000;
-    }
     </style>
     """, unsafe_allow_html=True)
     
     st.markdown("""
     <div class="main-header">
         <h1>📚 Intelligent Timetable Management System</h1>
-        <p>Powered by AI Prediction & Classroom Management</p>
+        <p>Teacher Absence & Arrangement Management</p>
     </div>
     """, unsafe_allow_html=True)
     
     # Auto-create teacher users from timetable on startup
-    created = auto_create_teacher_users()
-    if created > 0 and st.session_state.get('logged_in'):
-        st.success(f"✅ Auto-created {created} teacher accounts")
+    try:
+        created = auto_create_teacher_users()
+        if created > 0 and st.session_state.get('logged_in'):
+            st.success(f"✅ Auto-created {created} teacher accounts")
+    except Exception as e:
+        st.error(f"Error creating teacher accounts: {e}")
     
     if not st.session_state.logged_in:
         st.subheader("🔐 Login")
@@ -1347,8 +1344,8 @@ def main():
                 st.markdown("---")
                 st.caption("💡 **Demo Credentials:**")
                 st.caption("Admin: admin / School ID: admin123")
-                st.caption("Teachers: Use teacher name as username (e.g., dr_smith) with School ID as password")
-                st.caption("Default School ID for teachers: teacher name (e.g., dr_smith)")
+                st.caption("Teachers: Use teacher name as username (e.g., dr_smith)")
+                st.caption("Default password: teacher name in lowercase with underscores")
                 
                 st.markdown('</div>', unsafe_allow_html=True)
     else:
