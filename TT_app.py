@@ -789,7 +789,7 @@ def arrangement_management():
     if arrangements is None:
         arrangements = {}
     with tab3:
-    st.subheader("Upload Timetable (Excel)")
+        st.subheader("Upload Timetable (Excel)")
     uploaded_file = st.file_uploader("Choose Excel file", type=['xlsx', 'xls'])
     
     if uploaded_file:
