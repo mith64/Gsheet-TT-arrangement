@@ -13,7 +13,11 @@ import numpy as np
 import sys
 import subprocess
 import importlib
-import os
+import platform
+
+st.write(f"Python: {sys.executable}")
+st.write(f"Platform: {platform.system()}")
+st.write(f"Path: {sys.path}")
 
 # Function to ensure packages are installed
 def install_and_import(package):
