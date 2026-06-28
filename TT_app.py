@@ -47,12 +47,6 @@ except ImportError:
     OPENPYXL_AVAILABLE = False
     print("❌ openpyxl not available. Using fallback mode.")
 
-# Import other packages
-# Use xlsxwriter (doesn't need openpyxl)
-df.to_excel('file.xlsx', engine='xlsxwriter')
-
-# OR use openpyxl (needs it installed)
-df.to_excel('file.xlsx', engine='openpyxl')
 
 # File paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
