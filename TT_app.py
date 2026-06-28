@@ -788,7 +788,41 @@ def arrangement_management():
     arrangements = load_arrangements()
     if arrangements is None:
         arrangements = {}
+    with tab3:
+    st.subheader("Upload Timetable (Excel)")
+    uploaded_file = st.file_uploader("Choose Excel file", type=['xlsx', 'xls'])
     
+    if uploaded_file:
+        try:
+            df = pd.read_excel(uploaded_file)
+            
+            # Clean data immediately after upload
+            required_cols = ['Day', 'Time', 'Teacher', 'Subject', 'Class', 'Designation']
+            
+            # Check required columns
+            if not all(col in df.columns for col in required_cols):
+                st.error(f"Missing columns. Required: {required_cols}")
+                st.write("Your columns:", df.columns.tolist())
+            else:
+                # Convert all columns to string and clean
+                for col in df.columns:
+                    df[col] = df[col].fillna('').astype(str).str.strip()
+                
+                # Add Room column if missing
+                if 'Room' not in df.columns:
+                    df['Room'] = ''
+                
+                # Remove empty rows
+                df = df[df['Teacher'] != '']
+                df = df[df['Teacher'] != 'nan']
+                
+                if save_timetable(df):
+                    st.success("Timetable uploaded successfully!")
+                    st.rerun()
+                else:
+                    st.error("Failed to save timetable")
+        except Exception as e:
+            st.error(f"Error reading file: {e}")
     display_arrangement_summary()
     
     st.markdown("---")
