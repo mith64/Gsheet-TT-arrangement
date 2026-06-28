@@ -48,25 +48,11 @@ except ImportError:
     print("❌ openpyxl not available. Using fallback mode.")
 
 # Import other packages
-import pandas as pd
-import hashlib
-import json
-import shutil
-import tempfile
-from datetime import datetime
-import time
-import gc
-from collections import defaultdict, Counter
-import numpy as np
+# Use xlsxwriter (doesn't need openpyxl)
+df.to_excel('file.xlsx', engine='xlsxwriter')
 
-# Rest of your code...
-
-# Try to import openpyxl with error handling
-try:
-    import openpyxl
-    OPENPYXL_AVAILABLE = True
-except ImportError:
-    OPENPYXL_AVAILABLE = False
+# OR use openpyxl (needs it installed)
+df.to_excel('file.xlsx', engine='openpyxl')
 
 # File paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
