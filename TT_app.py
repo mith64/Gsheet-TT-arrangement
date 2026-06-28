@@ -15,6 +15,12 @@ import subprocess
 import importlib
 import platform
 
+# Create a sample DataFrame
+df = pd.DataFrame({'Column1': [1, 2, 3], 'Column2': ['A', 'B', 'C']})
+
+# Now you can export
+df.to_excel('file.xlsx', engine='xlsxwriter')
+
 st.write(f"Python: {sys.executable}")
 st.write(f"Platform: {platform.system()}")
 st.write(f"Path: {sys.path}")
